@@ -87,16 +87,16 @@ mindgamesnl.setUserName("Mindgamesnl");
 mindgamesnl.setEmailAddress("mats@toetmats.nl");
 mindgamesnl.setScore(9009);
 
-// save or update the user
-storm.save(mindgamesnl);
-
-// query for users
-Collection<User> justMindgamesnl =
+// You should always subscribe, see the methods as "blueprints"! To be fair, with saving you can keep the subscription empty.
+storm.save(mindgamesnl).subscribe(id -> {
+        // Let's find the user again by building a query!
         storm.buildQuery(User.class)
-        .where("user_name", Where.EQUAL, "Mindgamesnl")
-        .limit(1)
-        .execute()
-        .join();
+                    .where("user_name", Where.EQUAL, "Mindgamesnl")
+                    .limit(1)
+                    .execute().subscribe(user -> {
+        System.out.println("We found the user! " + user.getId());
+        });
+});
 ```
 
 # Usage with HikariCP
