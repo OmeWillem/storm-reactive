@@ -8,6 +8,7 @@ import models.SocialPost;
 import models.User;
 import org.junit.Assert;
 import org.junit.Test;
+import reactor.core.publisher.Flux;
 
 import java.io.File;
 import java.util.Collection;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 public class SqliteTest {
 
+    // TODO make better tests
     @Test
     @SneakyThrows
     public void testSqlite() {
@@ -33,22 +35,23 @@ public class SqliteTest {
         mindgamesnl.setUserName("Mindgamesnl");
         mindgamesnl.setEmailAddress("mats@toetmats.nl");
         mindgamesnl.setScore(9009);
-        storm.save(mindgamesnl);
+        storm.save(mindgamesnl).block();
 
         User niceFriend = new User();
         niceFriend.setUserName("Some Friend");
         niceFriend.setEmailAddress("friend@test.com");
         niceFriend.setScore(50);
-        storm.save(niceFriend);
+        storm.save(niceFriend).block();
 
         User randomBloke = new User();
         randomBloke.setUserName("Random Bloke");
         randomBloke.setEmailAddress("whatever@sheeesh.com");
         randomBloke.setScore(394);
-        storm.save(randomBloke);
+        storm.save(randomBloke).block();
 
         // try to find all users
-        Collection<User> allUsers = storm.findAll(User.class).join();
+        Collection<User> allUsers = storm.findAll(User.class).collectList().block();
+        Assert.assertNotNull(allUsers);
         Assert.assertEquals(3, allUsers.size());
 
         // check if all UUID's are loaded propery
@@ -58,16 +61,17 @@ public class SqliteTest {
         }
 
         // test queries
-        Collection<User> justMindgamesnl =
+        Flux<User> justMindgamesnl =
                 storm.buildQuery(User.class)
                         .where("user_name", Where.EQUAL, "Mindgamesnl")
                         .limit(1)
-                        .execute()
-                        .join();
+                        .execute();
 
-        Assert.assertEquals("Mindgamesnl", justMindgamesnl.stream().findFirst().get().getUserName());
+        Assert.assertNotNull(justMindgamesnl);
+        Assert.assertEquals("Mindgamesnl", justMindgamesnl.blockFirst().getUserName());
 
-        Collection<User> two = storm.buildQuery(User.class).limit(2).execute().join();
+        Collection<User> two = storm.buildQuery(User.class).limit(2).execute().collectList().block();
+        Assert.assertNotNull(two);
         Assert.assertEquals(2, two.size());
     }
 

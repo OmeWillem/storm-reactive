@@ -7,7 +7,6 @@ import com.craftmend.storm.utils.Reflection;
 import lombok.Getter;
 
 import java.lang.reflect.Field;
-import java.util.List;
 
 public class RelationField<T> {
 

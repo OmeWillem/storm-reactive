@@ -13,6 +13,7 @@ import java.io.File;
 
 public class RelationTest {
 
+    // TODO make better tests
     @Test
     @SneakyThrows
     public void testSqlite() {
@@ -30,29 +31,29 @@ public class RelationTest {
         mindgamesnl.setUserName("Mindgamesnl");
         mindgamesnl.setEmailAddress("mats@toetmats.nl");
         mindgamesnl.setScore(9009);
-        storm.save(mindgamesnl);
+        storm.save(mindgamesnl).subscribe();
 
         // create a social post for random bloke
         SocialPost socialPost = new SocialPost();
         socialPost.setPoster(1);
         socialPost.setContent("What a wonderful day");
 
-        storm.save(socialPost);
+        storm.save(socialPost).subscribe();
 
         // now load user 1, and get their posts from the database
         User user = storm.buildQuery(User.class)
                 .where("id", Where.EQUAL, 1)
                 .limit(1)
                 .execute()
-                .join()
-                .stream().findFirst().get();
+                .blockFirst();
 
+        Assert.assertNotNull(user);
         for (SocialPost post : user.getPosts()) {
             System.out.println(user.getUserName() + " posted: " + post.getContent());
         }
 
         // count posts
-        Assert.assertEquals("1", storm.count(SocialPost.class).join().toString());
+        Assert.assertEquals("1", storm.count(SocialPost.class).block().toString());
 
     }
 

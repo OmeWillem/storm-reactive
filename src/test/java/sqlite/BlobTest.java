@@ -1,21 +1,17 @@
 package sqlite;
 
 import com.craftmend.storm.Storm;
-import com.craftmend.storm.api.enums.Where;
 import com.craftmend.storm.connection.sqlite.SqliteFileDriver;
 import lombok.SneakyThrows;
-import models.SocialPost;
 import models.SqlMap;
-import models.User;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.File;
-import java.util.Collection;
-import java.util.UUID;
 
 public class BlobTest {
 
+    // TODO make better tests
     @Test
     @SneakyThrows
     public void testSqlite() {
@@ -34,9 +30,10 @@ public class BlobTest {
         m.getKeyValue().put("a", "AAA");
         m.getKeyValue().put("b", "BBB");
         m.getKeyValue().put("c", "CCC");
-        storm.save(m);
+        storm.save(m).block();
 
-        SqlMap l = storm.buildQuery(SqlMap.class).execute().get().stream().findFirst().get();
+        SqlMap l = storm.buildQuery(SqlMap.class).execute().blockFirst();
+        Assert.assertNotNull(l);
         Assert.assertEquals("Sample map", l.getMapName());
 
         Assert.assertEquals("AAA", l.getKeyValue().get("a"));

@@ -7,6 +7,7 @@ import com.craftmend.storm.connection.sqlite.SqliteMemoryDriver;
 import lombok.SneakyThrows;
 import models.SocialPost;
 import models.User;
+import org.junit.Assert;
 import org.junit.Test;
 import performance.StopWatch;
 
@@ -15,6 +16,7 @@ import java.util.Collection;
 
 public class MassSqliteTest {
 
+    // TODO make better tests
     @Test
     @SneakyThrows
     public void testSqlite() {
@@ -45,7 +47,7 @@ public class MassSqliteTest {
         singleUser.setEmailAddress("IAmUniueq@craftmend.com");
         singleUser.setScore(978);
 
-        storm.save(singleUser);
+        storm.save(singleUser).block();
 
         stopWatch.stop();
 
@@ -55,17 +57,18 @@ public class MassSqliteTest {
             u.setUserName("Matt-" + i);
             u.setEmailAddress(i + "@craftmend.com");
             u.setScore(500 - i);
-            storm.save(u);
+            storm.save(u).block();
         }
         stopWatch.stop();
 
         stopWatch.start("Loading all accounts from database to heap");
-        Collection<User> everyone = storm.findAll(User.class).join();
+        Collection<User> everyone = storm.findAll(User.class).collectList().block();
         stopWatch.stop();
 
         stopWatch.start("Deleting all users");
+        Assert.assertNotNull(everyone);
         for (User user : everyone) {
-            storm.delete(user);
+            storm.delete(user).block();
         }
         stopWatch.stop();
 

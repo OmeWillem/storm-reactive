@@ -10,8 +10,11 @@ import com.craftmend.storm.parser.objects.ParsedField;
 import com.craftmend.storm.utils.ColumnDefinition;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.TypeAdapter;
 import lombok.Getter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 import java.lang.reflect.InvocationTargetException;
 import java.sql.ResultSet;
@@ -19,7 +22,6 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
 
 public class Storm {
 
@@ -28,6 +30,7 @@ public class Storm {
     @Getter private final StormDriver driver;
     private boolean createdTables = false;
     @Getter private Gson gson;
+    private final Scheduler blockingScheduler = Schedulers.boundedElastic();
 
     /**
      * Initialize a new STORM instance with a given database driver
@@ -58,10 +61,10 @@ public class Storm {
     /**
      * Storm must register/migrate models before they can be used internally.
      * It registers the parsed class definition locally, but also plays a vital role in schema management.
-     *
+     * <p>
      * It checks the remote if a table exists with the annotated name, and creates it if it doesn't (along with the
      *          field schema for all annotated columns)
-     *
+     * <p>
      * It also checks the local schema class against the database, and alters the database table to add/remove
      * values based on dynamic code changes.
      *
@@ -159,47 +162,66 @@ public class Storm {
         return new QueryBuilder<>(model, parser, this);
     }
 
-    public <T extends StormModel> CompletableFuture<Integer> count(Class<T> model) throws Exception {
+    /**
+     * Counts the total number of rows for a given model.
+     * @param model The model class to count.
+     * @return A {@link Mono} emitting the total count as an Integer.
+     */
+    public <T extends StormModel> Mono<Integer> count(Class<T> model) {
         catchState();
-        CompletableFuture<Integer> future = new CompletableFuture<>();
-        String query = "SELECT COUNT(*) FROM " + getParsedModel(model, true).getTableName() + ";";
-        driver.executeQuery(query, rows -> {
-            boolean found = false;
-            while (rows.next()) {
-                future.complete(rows.getInt(1));
-                found = true;
+        return Mono.fromFuture(() -> {
+            CompletableFuture<Integer> future = new CompletableFuture<>();
+            String query = "SELECT COUNT(*) FROM " + getParsedModel(model, true).getTableName() + ";";
+            try {
+                driver.executeQuery(query, rows -> {
+                    boolean found = false;
+                    while (rows.next()) {
+                        future.complete(rows.getInt(1));
+                        found = true;
+                    }
+
+                    if (!found) {
+                        future.complete(0);
+                    }
+                });
+            } catch (Exception e) {
+                future.completeExceptionally(e);
             }
 
-            if (!found) {
-                future.complete(0);
-            }
-        });
-
-        return future;
+            return future;
+        }).subscribeOn(blockingScheduler);
     }
 
     /**
-     * Execute query
+     * Execute query and streams the results.
      *
      * @param query Query to execute
-     * @return Processed result set
-     * @throws Exception
+     * @param <T> The type of the StormModel.
+     * @return A {@link Flux} emitting each model instance found by the query.
      */
-    public <T extends StormModel> CompletableFuture<Collection<T>> executeQuery(QueryBuilder<T> query) throws Exception {
+    public <T extends StormModel> Flux<T> executeQuery(QueryBuilder<T> query) {
         catchState();
-        CompletableFuture<Collection<T>> future = new CompletableFuture<>();
-        List<T> results = new ArrayList<>();
-        ModelParser<T> parser = (ModelParser<T>) registeredModels.get(query.getModel());
-        if (parser == null) throw new IllegalArgumentException("The model " + query.getModel().getName() + " isn't loaded. Please call storm.migrate() with an empty instance");
-        QueryBuilder.PreparedQuery pq = query.build();
-        driver.executeQuery(pq.getQuery(), rows -> {
-            while (rows.next()) {
-                results.add(parser.fromResultSet(rows, parser.getRelationFields()));
+        return Mono.fromFuture(() -> {
+            CompletableFuture<Collection<T>> future = new CompletableFuture<>();
+            List<T> results = new ArrayList<>();
+            ModelParser<T> parser = (ModelParser<T>) registeredModels.get(query.getModel());
+            if (parser == null) {
+                future.completeExceptionally(new IllegalArgumentException("The model " + query.getModel().getName() + " isn't loaded. Please call storm.migrate() with an empty instance"));
+                return future;
             }
-            future.complete(results);
-        }, pq.getValues());
-
-        return future;
+            QueryBuilder.PreparedQuery pq = query.build();
+            try {
+                driver.executeQuery(pq.getQuery(), rows -> {
+                    while (rows.next()) {
+                        results.add(parser.fromResultSet(rows, parser.getRelationFields()));
+                    }
+                    future.complete(results);
+                }, pq.getValues());
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+            return future;
+        }).flatMapMany(Flux::fromIterable).subscribeOn(blockingScheduler);
     }
 
     /**
@@ -207,38 +229,53 @@ public class Storm {
      * This might be really memory intensive for large data sets.
      *
      * @param model Model to check
-     * @return A promise with the results
-     * @throws Exception
+     * @param <T> The type of the StormModel.
+     * @return A {@link Flux} emitting all found model instances.
      */
-    public <T extends StormModel> CompletableFuture<Collection<T>> findAll(Class<T> model) throws Exception {
+    public <T extends StormModel> Flux<T> findAll(Class<T> model) {
         catchState();
-        CompletableFuture<Collection<T>> future = new CompletableFuture<>();
-        List<T> results = new ArrayList<>();
-        ModelParser<T> parser = (ModelParser<T>) registeredModels.get(model);
-        if (parser == null) throw new IllegalArgumentException("The model " + model.getName() + " isn't loaded. Please call storm.migrate() with an empty instance");
-
-        driver.executeQuery("select * from " + parser.getTableName(), rows -> {
-            while (rows.next()) {
-                results.add(parser.fromResultSet(rows, parser.getRelationFields()));
+        return Mono.fromFuture(() -> {
+            CompletableFuture<Collection<T>> future = new CompletableFuture<>();
+            List<T> results = new ArrayList<>();
+            ModelParser<T> parser = (ModelParser<T>) registeredModels.get(model);
+            if (parser == null) {
+                future.completeExceptionally(new IllegalArgumentException("The model " + model.getName() + " isn't loaded. Please call storm.migrate() with an empty instance"));
+                return future;
             }
-            future.complete(results);
-        });
 
-        return future;
+            try {
+                driver.executeQuery("select * from " + parser.getTableName(), rows -> {
+                    while (rows.next()) {
+                        results.add(parser.fromResultSet(rows, parser.getRelationFields()));
+                    }
+                    future.complete(results);
+                });
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+            return future;
+        }).flatMapMany(Flux::fromIterable).subscribeOn(blockingScheduler);
     }
 
     /**
+     * Deletes a model from the database.
      * @param model Delete a row
-     * @throws SQLException
+     * @return A {@link Mono} that completes when the deletion is finished.
      */
-    public void delete(StormModel model) throws SQLException {
-        catchState();
-        model.preDelete();
-        ModelParser parser = registeredModels.get(model.getClass());
-        if (parser == null) throw new IllegalArgumentException("The model " + model.getClass().getName() + " isn't loaded. Please call storm.migrate() with an empty instance");
-        if (model.getId() == null) throw new IllegalArgumentException("This model doesn't have an ID");
-        driver.executeUpdate("DELETE FROM " + parser.getTableName() + " WHERE id=" + model.getId());
-        model.postDelete();
+    public Mono<Void> delete(StormModel model) {
+        return Mono.fromRunnable(() -> {
+            catchState();
+            model.preDelete();
+            ModelParser parser = registeredModels.get(model.getClass());
+            if (parser == null) throw new IllegalArgumentException("The model " + model.getClass().getName() + " isn't loaded. Please call storm.migrate() with an empty instance");
+            if (model.getId() == null) throw new IllegalArgumentException("This model doesn't have an ID");
+            try {
+                driver.executeUpdate("DELETE FROM " + parser.getTableName() + " WHERE id=" + model.getId());
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+            model.postDelete();
+        }).subscribeOn(blockingScheduler).then();
     }
 
     public <T extends StormModel> ModelParser<T> getParsedModel(Class<T> m, boolean loadIfNotFound) {
@@ -262,68 +299,71 @@ public class Storm {
      * Save the model in the database.
      * This either inserts it as a new row, or updates an existing row if there already is a row with this ID
      * @param model Target to save
-     * @return int Returns the amount of effected rows
+     * @param <T> The type of the StormModel.
+     * @return A {@link Mono} emitting the saved model instance, now including any generated ID.
      */
-    public int save(StormModel model) throws SQLException {
-        catchState();
-        model.preSave();
-        String updateOrInsert = "update %tableName set %psUpdateValues where id=%id";
-        String insertStatement = "insert into %tableName(%insertVars) values(%insertValues);";
+    public <T extends StormModel> Mono<T> save(T model) {
+        return Mono.fromCallable(() -> {
+            catchState();
+            model.preSave();
+            String updateOrInsert = "update %tableName set %psUpdateValues where id=%id";
+            String insertStatement = "insert into %tableName(%insertVars) values(%insertValues);";
 
-        // ps update value things
-        StringBuilder updateValues = new StringBuilder();
-        StringBuilder insertRow = new StringBuilder();
-        String insertPointers = "";
-        int nonAutoFields = model.parsed(this).getParsedFields().length;
-        for (ParsedField parsedField : model.parsed(this).getParsedFields()) {
-            if (parsedField.isAutoIncrement()) {
-                nonAutoFields--;
+            // ps update value things
+            StringBuilder updateValues = new StringBuilder();
+            StringBuilder insertRow = new StringBuilder();
+            String insertPointers = "";
+            int nonAutoFields = model.parsed(this).getParsedFields().length;
+            for (ParsedField parsedField : model.parsed(this).getParsedFields()) {
+                if (parsedField.isAutoIncrement()) {
+                    nonAutoFields--;
+                }
             }
-        }
-        Object[] preparedValues = new Object[nonAutoFields];
-        int pvi = 0;
-        for (int i = 0; i < model.parsed(this).getParsedFields().length; i++) {
-            boolean notLast = (i+1) != nonAutoFields;
-            ParsedField mf = model.parsed(this).getParsedFields()[i];
-            if (mf.isAutoIncrement()) {
-                // skip auto fields
-                continue;
+            Object[] preparedValues = new Object[nonAutoFields];
+            int pvi = 0;
+            for (int i = 0; i < model.parsed(this).getParsedFields().length; i++) {
+                boolean notLast = (i+1) != nonAutoFields;
+                ParsedField mf = model.parsed(this).getParsedFields()[i];
+                if (mf.isAutoIncrement()) {
+                    // skip auto fields
+                    continue;
+                }
+                preparedValues[pvi] = mf.valueOn(model);
+                pvi++;
+                updateValues.append(mf.getColumnName() + " = ?");
+                if (notLast) {
+                    updateValues.append(", ");
+                }
+
+                insertRow.append(mf.getColumnName());
+                insertPointers += "?";
+                if (notLast) {
+                    insertRow.append(", ");
+                    insertPointers += ", ";
+                }
             }
-            preparedValues[pvi] = mf.valueOn(model);
-            pvi++;
-            updateValues.append(mf.getColumnName() + " = ?");
-            if (notLast) {
-                updateValues.append(", ");
+
+            insertStatement = insertStatement
+                    .replace("%insertVars", insertRow.toString())
+                    .replace("%insertValues", insertPointers)
+                    .replaceAll("%tableName", model.parsed(this).getTableName());
+
+            updateOrInsert = updateOrInsert
+                    .replace("%psUpdateValues", updateValues.toString())
+                    .replaceAll("%tableName", model.parsed(this).getTableName())
+                    .replace("%id", model.getId() + "");
+
+
+            if (model.getId() == null) {
+                int o = driver.executeUpdate(insertStatement, preparedValues);
+                model.setId(o);
+                model.postSave();
+            } else {
+                driver.executeUpdate(updateOrInsert, preparedValues);
+                model.postSave();
             }
-
-            insertRow.append(mf.getColumnName());
-            insertPointers += "?";
-            if (notLast) {
-                insertRow.append(", ");
-                insertPointers += ", ";
-            }
-        }
-
-        insertStatement = insertStatement
-                .replace("%insertVars", insertRow.toString())
-                .replace("%insertValues", insertPointers)
-                .replaceAll("%tableName", model.parsed(this).getTableName());
-
-        updateOrInsert = updateOrInsert
-                .replace("%psUpdateValues", updateValues.toString())
-                .replaceAll("%tableName", model.parsed(this).getTableName())
-                .replace("%id", model.getId() + "");
-
-
-        if (model.getId() == null) {
-            int o = driver.executeUpdate(insertStatement, preparedValues);
-            model.setId(o);
-            model.postSave();
-            return o;
-        } else {
-            model.postSave();
-            return driver.executeUpdate(updateOrInsert, preparedValues);
-        }
+            return model;
+        }).subscribeOn(blockingScheduler);
     }
 
     private void catchState() {

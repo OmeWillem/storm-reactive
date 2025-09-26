@@ -13,7 +13,6 @@ import lombok.Setter;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -71,11 +70,12 @@ public class ModelParser<T extends StormModel> {
         // polyfill children
         for (RelationField relationField : relationFields) {
             try {
+                // It's fine to do this blocked since we only use it when reactor. yes
                 Collection<?> childValues = (Collection<?>) storm
                         .buildQuery(relationField.getTargetParser().ownType)
                         .where(relationField.getMatchToField(), Where.EQUAL, emptySelf.getId())
                         .execute()
-                        .join();
+                        .collectList().block();
                 relationField.getReflectedField().setAccessible(true);
                 List<Object> list = new ArrayList<>();
                 for (Object childValue : childValues) {

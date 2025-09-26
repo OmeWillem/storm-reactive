@@ -3,7 +3,6 @@ package sqlite;
 import com.craftmend.storm.Storm;
 import com.craftmend.storm.api.enums.Order;
 import com.craftmend.storm.connection.sqlite.SqliteFileDriver;
-import com.craftmend.storm.connection.sqlite.SqliteMemoryDriver;
 import lombok.SneakyThrows;
 import models.SocialPost;
 import models.User;
@@ -15,6 +14,7 @@ import java.util.Collection;
 
 public class LimitTest {
 
+    // TODO make better tests
     @Test
     @SneakyThrows
     public void testLimits() {
@@ -33,7 +33,7 @@ public class LimitTest {
             u.setUserName("Matt-" + i);
             u.setEmailAddress(i + "@craftmend.com");
             u.setScore(500 - i);
-            storm.save(u);
+            storm.save(u).block();
         }
 
         Collection<User> limited = storm
@@ -41,9 +41,10 @@ public class LimitTest {
                 .orderBy("id", Order.DESC)
                 .limit(10)
                 .execute()
-                .join();
+                .collectList().block();
 
-        Assert.assertEquals(limited.size(), 10);
+        Assert.assertNotNull(limited);
+        Assert.assertEquals(10, limited.size());
     }
 
 }

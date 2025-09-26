@@ -4,7 +4,6 @@ import com.craftmend.storm.connection.StormDriver;
 import com.craftmend.storm.dialect.Dialect;
 import com.craftmend.storm.dialect.sqlite.SqliteDialect;
 
-import java.io.File;
 import java.sql.*;
 
 public class SqliteMemoryDriver implements StormDriver {

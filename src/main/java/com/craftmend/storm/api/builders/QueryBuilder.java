@@ -6,15 +6,13 @@ import com.craftmend.storm.api.enums.Order;
 import com.craftmend.storm.api.enums.Where;
 import com.craftmend.storm.parser.ModelParser;
 import com.craftmend.storm.parser.objects.ParsedField;
-import com.craftmend.storm.parser.objects.RelationField;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 public class QueryBuilder<T extends StormModel> {
 
@@ -143,9 +141,9 @@ public class QueryBuilder<T extends StormModel> {
 
     /**
      * Execute the query! go brr!
-     * @return Promise of results
+     * @return A {@link Flux} that will emit the results.
      */
-    public CompletableFuture<Collection<T>> execute() throws Exception {
+    public Flux<T> execute() {
         return this.storm.executeQuery(this);
     }
 

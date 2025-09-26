@@ -2,9 +2,7 @@ package com.craftmend.storm.dialect.mariadb;
 
 import com.craftmend.storm.api.enums.KeyType;
 import com.craftmend.storm.dialect.Dialect;
-import com.craftmend.storm.parser.ModelParser;
 import com.craftmend.storm.parser.objects.ParsedField;
-import com.craftmend.storm.parser.objects.RelationField;
 import com.craftmend.storm.utils.ColumnDefinition;
 import com.craftmend.storm.utils.Reflection;
 

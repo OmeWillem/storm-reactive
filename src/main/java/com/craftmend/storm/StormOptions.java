@@ -2,7 +2,6 @@ package com.craftmend.storm;
 
 import com.craftmend.storm.logger.DefaultLogger;
 import com.craftmend.storm.logger.StormLogger;
-import com.google.gson.TypeAdapter;
 import lombok.Data;
 
 import java.util.HashMap;
