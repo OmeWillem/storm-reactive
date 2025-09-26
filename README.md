@@ -3,7 +3,7 @@
 </p>
 <b>Storm Reactive</b> is a fast, easy-to-use, no-bullshit Java ORM inspired by Doctrine. Its main goal is to let future-mats (and others!) quickly implement SQL-based storage and relation solutions in projects, and prototype concepts without harming production usability.  
 
-> **Note:** Storm Reactive is **NOT truly reactive**. It still uses JDBC under the hood, but comes with all the perks of [Project Reactor](https://projectreactor.io/).  
+> **Note:** Storm Reactive is **NOT truly reactive** yet. It still uses JDBC under the hood, but comes with all the perks of [Project Reactor](https://projectreactor.io/).  
 
 ## Features
  - Automatic schema creation and updates based on models
