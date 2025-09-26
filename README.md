@@ -91,11 +91,12 @@ mindgamesnl.setScore(9009);
 storm.save(mindgamesnl).subscribe(id -> {
         // Let's find the user again by building a query!
         storm.buildQuery(User.class)
-                    .where("user_name", Where.EQUAL, "Mindgamesnl")
-                    .limit(1)
-                    .execute().subscribe(user -> {
-        System.out.println("We found the user! " + user.getId());
-        });
+            .where("user_name", Where.EQUAL, "Mindgamesnl")
+            .limit(1)
+            .execute()
+            .subscribe(user -> {
+                System.out.println("We found the user! " + user.getId());
+            });
 });
 ```
 
